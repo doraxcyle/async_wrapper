@@ -191,7 +191,7 @@ void apply_callback(Promise promise, Args&&... args) {
 template <typename Callback, typename Promise = std::promise<typename function_args<Callback>::args_tuple>>
 class callback_wrapper final : public std::enable_shared_from_this<callback_wrapper<Callback, Promise>> {
 public:
-    explicit callback_wrapper() noexcept : promise_{std::make_shared<Promise>()} {
+    callback_wrapper() noexcept : promise_{std::make_shared<Promise>()} {
     }
 
     auto get_future() {
