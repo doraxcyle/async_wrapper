@@ -152,25 +152,50 @@ constexpr auto apply(Tuple&& tp, Func&& func) {
 }
 
 template <typename Tuple>
-constexpr auto reverse(Tuple tp) {
+constexpr auto reverse(const Tuple& tp) {
     return index_apply<std::tuple_size<Tuple>{}>(
         [&](auto... Indexes) { return std::make_tuple(std::get<std::tuple_size<Tuple>{} - 1 - Indexes>(tp)...); });
 }
 
 template <typename Tuple, std::size_t Index, typename T,
           typename Indexes = std::make_index_sequence<std::tuple_size<Tuple>{}>>
-struct replace_type;
+struct replace_type_by_index;
 
 template <typename... Args, std::size_t Index, typename T, std::size_t... Indexes>
-struct replace_type<std::tuple<Args...>, Index, T, std::index_sequence<Indexes...>> {
+struct replace_type_by_index<std::tuple<Args...>, Index, T, std::index_sequence<Indexes...>> {
     using type = std::tuple<std::conditional_t<Indexes == Index, T, Args>...>;
 };
 
-template <typename T, typename... Args, std::size_t Index = callback_index<std::tuple<std::decay_t<Args>...>>{}>
-constexpr auto replace_arg(T&& t, Args&&... args) {
+template <std::size_t Index, typename Tuple, typename T>
+constexpr auto replace_tuple_arg_by_index(const Tuple& tp, T&& t) {
+    return std::tuple_cat(take_front<Index>(tp), std::make_tuple(std::forward<T>(t)),
+                          reverse(take_front<std::tuple_size<Tuple>{} - Index - 1>(reverse(tp))));
+}
+
+template <std::size_t Index, typename T, typename... Args>
+constexpr auto replace_arg_by_index(T&& t, Args&&... args) {
     auto args_tuple = std::make_tuple(std::forward<Args>(args)...);
-    return std::tuple_cat(take_front<Index>(args_tuple), std::make_tuple(std::forward<T>(t)),
-                          reverse(take_front<sizeof...(Args) - Index - 1>(reverse(args_tuple))));
+    return replace_tuple_arg_by_index<Index>(args_tuple, std::forward<T>(t));
+}
+
+template <typename T, typename F>
+constexpr auto replace_arg_impl(T&& t, F&& f, std::true_type) {
+    return std::forward<F>(f);
+}
+
+template <typename T, typename F>
+constexpr auto replace_arg_impl(T&& t, F&& f, std::false_type) {
+    return std::forward<T>(t);
+}
+
+template <bool B, typename T, typename F>
+constexpr auto replace_arg(T&& t, F&& f) {
+    return replace_arg_impl(std::forward<T>(t), std::forward<F>(f), std::integral_constant<bool, B>{});
+}
+
+template <typename T, typename F>
+constexpr auto replace_placeholder(T&& t, F&& f) {
+    return replace_arg<is_callback_placeholder<T>{}>(std::forward<T>(t), std::forward<F>(f));
 }
 
 template <typename Promise>
@@ -217,7 +242,19 @@ template <typename Func, typename... Args,
 decltype(auto) async_wrapper(Func&& func, Args&&... args) {
     using callback_t = typename detail::function_args<std::decay_t<Func>>::template arg_t<Index>;
     auto wrapper = std::make_shared<detail::callback_wrapper<callback_t>>();
-    detail::apply(detail::replace_arg(wrapper->callback(), std::forward<Args>(args)...), std::forward<Func>(func));
+    // 1.
+    // detail::apply(detail::replace_arg_by_index<Index>(wrapper->callback(), std::forward<Args>(args)...),
+    //               std::forward<Func>(func));
+
+    // 2.
+    // auto args_tupe = std::make_tuple(std::forward<Args>(args)...);
+    // auto tp = detail::replace_tuple_arg_by_index<Index>(args_tupe, wrapper->callback());
+    // detail::apply(std::move(tp), std::forward<Func>(func));
+
+    // 3.
+    detail::apply(std::make_tuple(detail::replace_placeholder(std::forward<Args>(args), wrapper->callback())...),
+                  std::forward<Func>(func));
+
     return wrapper->get_future();
 }
 
