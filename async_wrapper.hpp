@@ -24,25 +24,113 @@
 #include <type_traits>
 #include <future>
 #include <tuple>
+#if defined(ENABLE_CO_AWAIT)
+#include <experimental/coroutine>
+#endif // defined(ENABLE_CO_AWAIT)
 
 namespace cue {
 
 namespace detail {
 
-struct placeholder_t final {};
+struct placeholder_std_future_t final {};
+
+struct placeholder_awaitable_t final {};
 
 template <typename T>
-using is_callback_placeholder = std::is_same<std::decay_t<T>, placeholder_t>;
+using is_std_future_placeholder = std::is_same<std::decay_t<T>, placeholder_std_future_t>;
+
+template <typename T>
+using is_awaitable_placeholder = std::is_same<std::decay_t<T>, placeholder_awaitable_t>;
+
+#if defined(ENABLE_CO_AWAIT)
+template <typename T>
+class awaitable_promise;
+#endif // defined(ENABLE_CO_AWAIT)
 
 } // namespace detail
 
+#if defined(ENABLE_CO_AWAIT)
+template <typename T>
+class awaitable_future {
+public:
+    using promise_type = detail::awaitable_promise<T>;
+
+    awaitable_future() noexcept = default;
+    awaitable_future(const awaitable_future&) noexcept = delete;
+    awaitable_future& operator=(const awaitable_future&) noexcept = delete;
+
+    awaitable_future(awaitable_future&& rhs) noexcept {
+        if (std::addressof(rhs) != this) {
+            promise_ = rhs.promise_;
+            rhs.promise_ = nullptr;
+        }
+    }
+
+    awaitable_future& operator=(awaitable_future&& rhs) noexcept {
+        if (std::addressof(rhs) != this) {
+            promise_ = rhs.promise_;
+            rhs.promise_ = nullptr;
+        }
+        return *this;
+    }
+
+    // for coroutine
+    bool await_ready() const noexcept {
+        return promise_->ready();
+    }
+
+    // for coroutine
+    void await_suspend(std::experimental::coroutine_handle<> handle) noexcept {
+        promise_->suspend(std::move(handle));
+    }
+
+    // for coroutine
+    T await_resume() noexcept {
+        return promise_->get();
+    }
+
+private:
+    template <typename>
+    friend class detail::awaitable_promise;
+
+    explicit awaitable_future(detail::awaitable_promise<T>* promise) noexcept : promise_{promise} {
+    }
+
+    detail::awaitable_promise<T>* promise_{nullptr};
+};
+
+template <typename T>
+using awaitable_t = awaitable_future<T>;
+
+using awaitable = awaitable_t<void>;
+#endif // defined(ENABLE_CO_AWAIT)
+
 namespace placeholder {
 
-constexpr detail::placeholder_t callback{};
+constexpr detail::placeholder_std_future_t std_future{};
+constexpr detail::placeholder_awaitable_t awaitable{};
 
 } // namespace placeholder
 
 namespace detail {
+
+template <typename T, typename Tuple>
+struct tuple_has_type;
+
+template <typename T>
+struct tuple_has_type<T, std::tuple<>> : std::false_type {};
+
+template <typename T, typename U, typename... Args>
+struct tuple_has_type<T, std::tuple<U, Args...>> : tuple_has_type<T, std::tuple<Args...>> {};
+
+template <typename T, typename... Args>
+struct tuple_has_type<T, std::tuple<T, Args...>> : std::true_type {};
+
+template <typename Tuple>
+using has_std_future = tuple_has_type<placeholder_std_future_t, Tuple>;
+
+template <typename Tuple>
+using has_awaitable = tuple_has_type<placeholder_awaitable_t, Tuple>;
 
 template <typename T, typename Tuple>
 struct type_index;
@@ -55,7 +143,10 @@ struct type_index<T, std::tuple<U, Args...>>
     : public std::integral_constant<std::size_t, 1 + type_index<T, std::tuple<Args...>>{}> {};
 
 template <typename Tuple>
-using callback_index = type_index<placeholder_t, Tuple>;
+using std_future_index = type_index<placeholder_std_future_t, Tuple>;
+
+template <typename Tuple>
+using awaitable_index = type_index<placeholder_awaitable_t, Tuple>;
 
 template <typename T>
 struct function_args;
@@ -129,6 +220,192 @@ struct function_args<R (T::*)(Args...) const> : function_args<R(Args...)> {};
 template <typename T>
 struct function_args : function_args<decltype(&T::operator())> {};
 
+#if defined(ENABLE_CO_AWAIT)
+class awaitable_promise_base {
+public:
+    awaitable_promise_base() noexcept : state_{std::make_unique<state>()} {
+    }
+
+    awaitable_promise_base(const awaitable_promise_base&) noexcept = delete;
+    awaitable_promise_base& operator=(const awaitable_promise_base&) noexcept = delete;
+
+    awaitable_promise_base(awaitable_promise_base&& rhs) noexcept {
+        assign_rv(std::move(rhs));
+    }
+
+    awaitable_promise_base& operator=(awaitable_promise_base&& rhs) noexcept {
+        assign_rv(std::move(rhs));
+        return *this;
+    }
+
+    void set_exception(std::exception_ptr exception) noexcept {
+        std::call_once(state_->flag(), [this, exception = std::move(exception)]() {
+            exception_ = std::move(exception);
+            state_->ready(true);
+            handle_.resume();
+        });
+    }
+
+    bool ready() const noexcept {
+        return state_->ready();
+    }
+
+    void suspend(std::experimental::coroutine_handle<> handle) noexcept {
+        handle_ = std::move(handle);
+    }
+
+    // for coroutine
+    auto initial_suspend() noexcept {
+        return std::experimental::suspend_never{};
+    }
+
+    // for coroutine
+    auto final_suspend() noexcept {
+        return std::experimental::suspend_always{};
+    }
+
+    // for coroutine
+    void unhandled_exception() {
+        set_exception(std::current_exception());
+    }
+
+    void rethrow_exception() {
+        if (exception_) {
+            std::rethrow_exception(exception_);
+        }
+    }
+
+    void swap(awaitable_promise_base& other) noexcept {
+        if (this != std::addressof(other)) {
+            std::swap(handle_, other.handle_);
+            std::swap(exception_, other.exception_);
+            std::swap(state_, other.state_);
+        }
+    }
+
+protected:
+    struct state final {
+        bool ready() const noexcept {
+            return ready_;
+        }
+
+        void ready(bool ready) noexcept {
+            ready_ = ready;
+        }
+
+        std::once_flag& flag() noexcept {
+            return flag_;
+        }
+
+    private:
+        std::once_flag flag_;
+        std::atomic_bool ready_{false};
+    };
+
+    std::experimental::coroutine_handle<> handle_;
+    std::exception_ptr exception_{nullptr};
+    std::unique_ptr<state> state_{nullptr};
+
+private:
+    void assign_rv(awaitable_promise_base&& other) noexcept {
+        if (this != std::addressof(other)) {
+            handle_ = nullptr;
+            exception_ = nullptr;
+            state_.reset();
+            swap(other);
+        }
+    }
+};
+
+template <typename T>
+class awaitable_promise final : public awaitable_promise_base {
+public:
+    using promise_type = awaitable_promise<T>;
+    using future_type = awaitable_future<T>;
+
+    awaitable_promise() noexcept = default;
+    awaitable_promise(const awaitable_promise&) noexcept = delete;
+    awaitable_promise& operator=(const awaitable_promise&) noexcept = delete;
+    awaitable_promise(awaitable_promise&&) noexcept = default;
+    awaitable_promise& operator=(awaitable_promise&&) noexcept = default;
+
+    future_type get_future() {
+        return future_type{this};
+    }
+
+    // for coroutine
+    future_type get_return_object() noexcept {
+        return future_type{this};
+    };
+
+    // for coroutine
+    template <typename Value>
+    void return_value(Value&& value) {
+        set_value(std::forward<Value>(value));
+    }
+
+    template <typename Value>
+    void set_value(Value&& value) {
+        std::call_once(state_->flag(), [this, value = std::forward<Value>(value)]() {
+            result_ = std::move(value);
+            state_->ready(true);
+            handle_.resume();
+        });
+    }
+
+    T get() {
+        if (!state_->ready()) {
+            exception_ = std::make_exception_ptr(std::runtime_error{"no value"});
+        }
+        rethrow_exception();
+        return std::move(result_);
+    }
+
+private:
+    T result_;
+};
+
+template <>
+class awaitable_promise<void> final : public awaitable_promise_base {
+public:
+    using promise_type = awaitable_promise<void>;
+    using future_type = awaitable_future<void>;
+
+    awaitable_promise() noexcept = default;
+    awaitable_promise(const awaitable_promise&) noexcept = delete;
+    awaitable_promise& operator=(const awaitable_promise&) noexcept = delete;
+    awaitable_promise(awaitable_promise&&) noexcept = default;
+    awaitable_promise& operator=(awaitable_promise&&) noexcept = default;
+
+    future_type get_future() {
+        return future_type{this};
+    }
+
+    // for coroutine
+    future_type get_return_object() noexcept {
+        return future_type{this};
+    };
+
+    // for coroutine
+    void return_void() {
+    }
+
+    void set_value() {
+        std::call_once(state_->flag(), [this]() {
+            state_->ready(true);
+            handle_.resume();
+        });
+    }
+
+    void get() {
+        if (!state_->ready()) {
+            exception_ = std::make_exception_ptr(std::runtime_error{"no value"});
+        }
+        rethrow_exception();
+    }
+};
+#endif // defined(ENABLE_CO_AWAIT)
+
 template <typename Func, std::size_t... Indexes>
 constexpr auto index_apply_impl(Func&& func, std::index_sequence<Indexes...>) {
     return func(std::integral_constant<std::size_t, Indexes>{}...);
@@ -194,8 +471,13 @@ constexpr auto replace_arg(T&& t, F&& f) {
 }
 
 template <typename T, typename F>
-constexpr auto replace_placeholder(T&& t, F&& f) {
-    return replace_arg<is_callback_placeholder<T>{}>(std::forward<T>(t), std::forward<F>(f));
+constexpr auto replace_std_future(T&& t, F&& f) {
+    return replace_arg<is_std_future_placeholder<T>{}>(std::forward<T>(t), std::forward<F>(f));
+}
+
+template <typename T, typename F>
+constexpr auto replace_awaitable(T&& t, F&& f) {
+    return replace_arg<is_awaitable_placeholder<T>{}>(std::forward<T>(t), std::forward<F>(f));
 }
 
 template <typename Promise>
@@ -213,10 +495,12 @@ void apply_callback(Promise promise, Args&&... args) {
     promise->set_value(std::make_tuple(std::forward<Args>(args)...));
 }
 
-template <typename Callback, typename Promise = std::promise<typename function_args<Callback>::args_tuple>>
+template <typename Callback, template <typename> class Promise>
 class callback_wrapper final : public std::enable_shared_from_this<callback_wrapper<Callback, Promise>> {
 public:
-    callback_wrapper() noexcept : promise_{std::make_shared<Promise>()} {
+    using promise_type = Promise<typename function_args<Callback>::args_tuple>;
+
+    callback_wrapper() noexcept : promise_{std::make_shared<promise_type>()} {
     }
 
     auto get_future() {
@@ -232,30 +516,47 @@ public:
     }
 
 private:
-    std::shared_ptr<Promise> promise_;
+    std::shared_ptr<promise_type> promise_;
 };
 
-} // namespace detail
-
-template <typename Func, typename... Args,
-          std::size_t Index = detail::callback_index<std::tuple<std::decay_t<Args>...>>{}>
-decltype(auto) async_wrapper(Func&& func, Args&&... args) {
-    using callback_t = typename detail::function_args<std::decay_t<Func>>::template arg_t<Index>;
-    auto wrapper = std::make_shared<detail::callback_wrapper<callback_t>>();
+template <typename Func, typename... Args>
+auto async_wrapper_impl(std::true_type, Func&& func, Args&&... args) {
+    constexpr std::size_t index = std_future_index<std::tuple<std::decay_t<Args>...>>{};
+    using callback_t = typename function_args<std::decay_t<Func>>::template arg_t<index>;
+    auto wrapper = std::make_shared<callback_wrapper<callback_t, std::promise>>();
     // 1.
-    // detail::apply(detail::replace_arg_by_index<Index>(wrapper->callback(), std::forward<Args>(args)...),
+    // detail::apply(replace_arg_by_index<index>(wrapper->callback(), std::forward<Args>(args)...),
     //               std::forward<Func>(func));
 
     // 2.
     // auto args_tupe = std::make_tuple(std::forward<Args>(args)...);
-    // auto tp = detail::replace_tuple_arg_by_index<Index>(args_tupe, wrapper->callback());
+    // auto tp = replace_tuple_arg_by_index<index>(args_tupe, wrapper->callback());
     // detail::apply(std::move(tp), std::forward<Func>(func));
 
     // 3.
-    detail::apply(std::make_tuple(detail::replace_placeholder(std::forward<Args>(args), wrapper->callback())...),
+    detail::apply(std::make_tuple(replace_std_future(std::forward<Args>(args), wrapper->callback())...),
                   std::forward<Func>(func));
-
     return wrapper->get_future();
+}
+
+#if defined(ENABLE_CO_AWAIT)
+template <typename Func, typename... Args>
+auto async_wrapper_impl(std::false_type, Func&& func, Args&&... args) {
+    constexpr std::size_t index = awaitable_index<std::tuple<std::decay_t<Args>...>>{};
+    using callback_t = typename function_args<std::decay_t<Func>>::template arg_t<index>;
+    auto wrapper = std::make_shared<callback_wrapper<callback_t, awaitable_promise>>();
+    detail::apply(std::make_tuple(replace_awaitable(std::forward<Args>(args), wrapper->callback())...),
+                  std::forward<Func>(func));
+    return wrapper->get_future();
+}
+#endif // defined(ENABLE_CO_AWAIT)
+
+} // namespace detail
+
+template <typename Func, typename... Args, typename Tuple = std::tuple<std::decay_t<Args>...>>
+auto async_wrapper(Func&& func, Args&&... args) {
+    return detail::async_wrapper_impl(detail::has_std_future<Tuple>{}, std::forward<Func>(func),
+                                      std::forward<Args>(args)...);
 }
 
 } // namespace cue
