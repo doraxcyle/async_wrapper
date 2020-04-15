@@ -56,8 +56,8 @@ public:
     using promise_type = detail::awaitable_promise<T>;
 
     awaitable_future() noexcept = default;
-    awaitable_future(const awaitable_future&) noexcept = delete;
-    awaitable_future& operator=(const awaitable_future&) noexcept = delete;
+    awaitable_future(const awaitable_future&) = delete;
+    awaitable_future& operator=(const awaitable_future&) = delete;
 
     awaitable_future(awaitable_future&& rhs) noexcept {
         if (std::addressof(rhs) != this) {
@@ -226,8 +226,8 @@ public:
     awaitable_promise_base() noexcept : state_{std::make_unique<state>()} {
     }
 
-    awaitable_promise_base(const awaitable_promise_base&) noexcept = delete;
-    awaitable_promise_base& operator=(const awaitable_promise_base&) noexcept = delete;
+    awaitable_promise_base(const awaitable_promise_base&) = delete;
+    awaitable_promise_base& operator=(const awaitable_promise_base&) = delete;
 
     awaitable_promise_base(awaitable_promise_base&& rhs) noexcept {
         assign_rv(std::move(rhs));
@@ -324,10 +324,10 @@ public:
     using future_type = awaitable_future<T>;
 
     awaitable_promise() noexcept = default;
-    awaitable_promise(const awaitable_promise&) noexcept = delete;
-    awaitable_promise& operator=(const awaitable_promise&) noexcept = delete;
-    awaitable_promise(awaitable_promise&&) noexcept = default;
-    awaitable_promise& operator=(awaitable_promise&&) noexcept = default;
+    awaitable_promise(const awaitable_promise&) = delete;
+    awaitable_promise& operator=(const awaitable_promise&) = delete;
+    awaitable_promise(awaitable_promise&&) = default;
+    awaitable_promise& operator=(awaitable_promise&&) = default;
 
     future_type get_future() {
         return future_type{this};
@@ -372,10 +372,10 @@ public:
     using future_type = awaitable_future<void>;
 
     awaitable_promise() noexcept = default;
-    awaitable_promise(const awaitable_promise&) noexcept = delete;
-    awaitable_promise& operator=(const awaitable_promise&) noexcept = delete;
-    awaitable_promise(awaitable_promise&&) noexcept = default;
-    awaitable_promise& operator=(awaitable_promise&&) noexcept = default;
+    awaitable_promise(const awaitable_promise&) = delete;
+    awaitable_promise& operator=(const awaitable_promise&) = delete;
+    awaitable_promise(awaitable_promise&&) = default;
+    awaitable_promise& operator=(awaitable_promise&&) = default;
 
     future_type get_future() {
         return future_type{this};
