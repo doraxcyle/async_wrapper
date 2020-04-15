@@ -24,6 +24,9 @@
 
 using namespace cue;
 
+// 为了显示支持多种参数类型
+// 并不推荐使用const int&/int&&/const std::function<void(int)>&/std::function<void(int, int)>&&
+// 这些引用类型
 void func1(const int& a, int b, const std::function<void(int)>& f, float c) {
     std::thread{[=]() {
         std::this_thread::sleep_for(std::chrono::seconds(1));
