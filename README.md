@@ -15,21 +15,21 @@ using namespace cue;
 // 这些引用类型
 void func1(const int& a, int b, const std::function<void(int)>& f, float c) {
     std::thread{[=]() {
-        std::this_thread::sleep_for(std::chrono::seconds(1));
+        std::this_thread::sleep_for(std::chrono::seconds{1});
         f(a + b);
     }}.detach();
 }
 
 void func2(int&& a, int b, std::function<void()> f) {
     std::thread{[=]() {
-        std::this_thread::sleep_for(std::chrono::seconds(1));
+        std::this_thread::sleep_for(std::chrono::seconds{1});
         f();
     }}.detach();
 }
 
 void func3(int a, int b, std::function<void(int, int)>&& f) {
     std::thread{[=]() {
-        std::this_thread::sleep_for(std::chrono::seconds(1));
+        std::this_thread::sleep_for(std::chrono::seconds{1});
         f(a + b, b);
     }}.detach();
 }
