@@ -36,24 +36,24 @@ struct placeholder_std_future_t final {};
 
 struct placeholder_awaitable_t final {};
 
-template <typename T>
-using is_std_future_placeholder = std::is_same<std::decay_t<T>, placeholder_std_future_t>;
+template <typename _Ty>
+using is_std_future_placeholder = std::is_same<std::decay_t<_Ty>, placeholder_std_future_t>;
 
-template <typename T>
-using is_awaitable_placeholder = std::is_same<std::decay_t<T>, placeholder_awaitable_t>;
+template <typename _Ty>
+using is_awaitable_placeholder = std::is_same<std::decay_t<_Ty>, placeholder_awaitable_t>;
 
 #if defined(ENABLE_CO_AWAIT)
-template <typename T>
+template <typename _Ty>
 class awaitable_promise;
 #endif // defined(ENABLE_CO_AWAIT)
 
 } // namespace detail
 
 #if defined(ENABLE_CO_AWAIT)
-template <typename T>
+template <typename _Ty>
 class awaitable_future {
 public:
-    using promise_type = detail::awaitable_promise<T>;
+    using promise_type = detail::awaitable_promise<_Ty>;
 
     awaitable_future() noexcept = default;
     awaitable_future(const awaitable_future&) = delete;
@@ -85,7 +85,7 @@ public:
     }
 
     // for coroutine
-    T await_resume() noexcept {
+    _Ty await_resume() noexcept {
         return promise_->get();
     }
 
@@ -93,14 +93,14 @@ private:
     template <typename>
     friend class detail::awaitable_promise;
 
-    explicit awaitable_future(detail::awaitable_promise<T>* promise) noexcept : promise_{promise} {
+    explicit awaitable_future(detail::awaitable_promise<_Ty>* promise) noexcept : promise_{promise} {
     }
 
-    detail::awaitable_promise<T>* promise_{nullptr};
+    detail::awaitable_promise<_Ty>* promise_{nullptr};
 };
 
-template <typename T>
-using awaitable_t = awaitable_future<T>;
+template <typename _Ty>
+using awaitable_t = awaitable_future<_Ty>;
 
 using awaitable = awaitable_t<void>;
 #endif // defined(ENABLE_CO_AWAIT)
@@ -114,111 +114,111 @@ constexpr detail::placeholder_awaitable_t awaitable{};
 
 namespace detail {
 
-template <typename T, typename Tuple>
+template <typename _Ty, typename _Tuple>
 struct tuple_has_type;
 
-template <typename T>
-struct tuple_has_type<T, std::tuple<>> : std::false_type {};
+template <typename _Ty>
+struct tuple_has_type<_Ty, std::tuple<>> : std::false_type {};
 
-template <typename T, typename U, typename... Args>
-struct tuple_has_type<T, std::tuple<U, Args...>> : tuple_has_type<T, std::tuple<Args...>> {};
+template <typename _Ty, typename _Head, typename... _Args>
+struct tuple_has_type<_Ty, std::tuple<_Head, _Args...>> : tuple_has_type<_Ty, std::tuple<_Args...>> {};
 
-template <typename T, typename... Args>
-struct tuple_has_type<T, std::tuple<T, Args...>> : std::true_type {};
+template <typename _Ty, typename... _Args>
+struct tuple_has_type<_Ty, std::tuple<_Ty, _Args...>> : std::true_type {};
 
-template <typename Tuple>
-using has_std_future = tuple_has_type<placeholder_std_future_t, Tuple>;
+template <typename _Tuple>
+using has_std_future = tuple_has_type<placeholder_std_future_t, _Tuple>;
 
-template <typename Tuple>
-using has_awaitable = tuple_has_type<placeholder_awaitable_t, Tuple>;
+template <typename _Tuple>
+using has_awaitable = tuple_has_type<placeholder_awaitable_t, _Tuple>;
 
-template <typename T, typename Tuple>
+template <typename _Ty, typename _Tuple>
 struct type_index;
 
-template <typename T, typename... Args>
-struct type_index<T, std::tuple<T, Args...>> : public std::integral_constant<std::size_t, 0> {};
+template <typename _Ty, typename... _Args>
+struct type_index<_Ty, std::tuple<_Ty, _Args...>> : public std::integral_constant<std::size_t, 0> {};
 
-template <typename T, typename U, typename... Args>
-struct type_index<T, std::tuple<U, Args...>>
-    : public std::integral_constant<std::size_t, 1 + type_index<T, std::tuple<Args...>>{}> {};
+template <typename _Ty, typename _Head, typename... _Args>
+struct type_index<_Ty, std::tuple<_Head, _Args...>>
+    : public std::integral_constant<std::size_t, 1 + type_index<_Ty, std::tuple<_Args...>>{}> {};
 
-template <typename Tuple>
-using std_future_index = type_index<placeholder_std_future_t, Tuple>;
+template <typename _Tuple>
+using std_future_index = type_index<placeholder_std_future_t, _Tuple>;
 
-template <typename Tuple>
-using awaitable_index = type_index<placeholder_awaitable_t, Tuple>;
+template <typename _Tuple>
+using awaitable_index = type_index<placeholder_awaitable_t, _Tuple>;
 
-template <typename T>
+template <typename _Ty>
 struct function_args;
 
-template <typename R, typename... Args>
-struct function_args<R(Args...)> {
-    using type = R(Args...);
+template <typename _Ret, typename... _Args>
+struct function_args<_Ret(_Args...)> {
+    using type = _Ret(_Args...);
     using function_type = std::function<type>;
-    using return_type = R;
-    static constexpr std::size_t arity{sizeof...(Args)};
+    using return_type = _Ret;
+    static constexpr std::size_t arity{sizeof...(_Args)};
 
-    using args_tuple = std::tuple<std::decay_t<Args>...>;
+    using args_tuple = std::tuple<std::decay_t<_Args>...>;
 
-    template <std::size_t N>
+    template <std::size_t _Index>
     struct arg {
-        using type = std::decay_t<typename std::tuple_element<N, std::tuple<Args...>>::type>;
+        using type = std::decay_t<typename std::tuple_element<_Index, std::tuple<_Args...>>::type>;
     };
 
-    template <std::size_t N>
-    using arg_t = typename arg<N>::type;
+    template <std::size_t _Index>
+    using arg_t = typename arg<_Index>::type;
 };
 
-template <typename R, typename Arg>
-struct function_args<R(Arg)> {
-    using type = R(Arg);
+template <typename _Ret, typename _Arg>
+struct function_args<_Ret(_Arg)> {
+    using type = _Ret(_Arg);
     using function_type = std::function<type>;
-    using return_type = R;
+    using return_type = _Ret;
     static constexpr std::size_t arity{1};
 
-    using args_tuple = std::decay_t<Arg>;
+    using args_tuple = std::decay_t<_Arg>;
 
-    template <std::size_t N>
+    template <std::size_t _Index>
     struct arg {
-        using type = std::decay_t<Arg>;
+        using type = std::decay_t<_Arg>;
     };
 
-    template <std::size_t N>
-    using arg_t = typename arg<N>::type;
+    template <std::size_t _Index>
+    using arg_t = typename arg<_Index>::type;
 };
 
-template <typename R>
-struct function_args<R()> {
-    using type = R();
+template <typename _Ret>
+struct function_args<_Ret()> {
+    using type = _Ret();
     using function_type = std::function<type>;
-    using return_type = R;
+    using return_type = _Ret;
     static constexpr std::size_t arity{0};
 
     using args_tuple = void;
 
-    template <std::size_t N>
+    template <std::size_t _Index>
     struct arg {
         using type = void;
     };
 
-    template <std::size_t N>
-    using arg_t = typename arg<N>::type;
+    template <std::size_t _Index>
+    using arg_t = typename arg<_Index>::type;
 };
 
-template <typename R, typename... Args>
-struct function_args<R (*)(Args...)> : function_args<R(Args...)> {};
+template <typename _Ret, typename... _Args>
+struct function_args<_Ret (*)(_Args...)> : function_args<_Ret(_Args...)> {};
 
-template <typename R, typename... Args>
-struct function_args<std::function<R(Args...)>> : function_args<R(Args...)> {};
+template <typename _Ret, typename... _Args>
+struct function_args<std::function<_Ret(_Args...)>> : function_args<_Ret(_Args...)> {};
 
-template <typename R, typename T, typename... Args>
-struct function_args<R (T::*)(Args...)> : function_args<R(Args...)> {};
+template <typename _Ret, typename _Ty, typename... _Args>
+struct function_args<_Ret (_Ty::*)(_Args...)> : function_args<_Ret(_Args...)> {};
 
-template <typename R, typename T, typename... Args>
-struct function_args<R (T::*)(Args...) const> : function_args<R(Args...)> {};
+template <typename _Ret, typename _Ty, typename... _Args>
+struct function_args<_Ret (_Ty::*)(_Args...) const> : function_args<_Ret(_Args...)> {};
 
-template <typename T>
-struct function_args : function_args<decltype(&T::operator())> {};
+template <typename _Ty>
+struct function_args : function_args<decltype(&_Ty::operator())> {};
 
 #if defined(ENABLE_CO_AWAIT)
 class awaitable_promise_base {
@@ -317,11 +317,11 @@ private:
     }
 };
 
-template <typename T>
+template <typename _Ty>
 class awaitable_promise final : public awaitable_promise_base {
 public:
-    using promise_type = awaitable_promise<T>;
-    using future_type = awaitable_future<T>;
+    using promise_type = awaitable_promise<_Ty>;
+    using future_type = awaitable_future<_Ty>;
 
     awaitable_promise() noexcept = default;
     awaitable_promise(const awaitable_promise&) = delete;
@@ -339,21 +339,21 @@ public:
     };
 
     // for coroutine
-    template <typename Value>
-    void return_value(Value&& value) {
-        set_value(std::forward<Value>(value));
+    template <typename _Value>
+    void return_value(_Value&& value) {
+        set_value(std::forward<_Value>(value));
     }
 
-    template <typename Value>
-    void set_value(Value&& value) {
-        std::call_once(state_->flag(), [this, value = std::forward<Value>(value)]() {
+    template <typename _Value>
+    void set_value(_Value&& value) {
+        std::call_once(state_->flag(), [this, value = std::forward<_Value>(value)]() {
             result_ = std::move(value);
             state_->ready(true);
             handle_.resume();
         });
     }
 
-    T get() {
+    _Ty get() {
         if (!state_->ready()) {
             exception_ = std::make_exception_ptr(std::runtime_error{"no value"});
         }
@@ -362,7 +362,7 @@ public:
     }
 
 private:
-    T result_;
+    _Ty result_;
 };
 
 template <>
@@ -406,99 +406,99 @@ public:
 };
 #endif // defined(ENABLE_CO_AWAIT)
 
-template <typename Func, std::size_t... Indexes>
-constexpr auto index_apply_impl(Func&& func, std::index_sequence<Indexes...>) {
-    return func(std::integral_constant<std::size_t, Indexes>{}...);
+template <typename _Func, std::size_t... _Indexes>
+constexpr auto index_apply_impl(_Func&& func, std::index_sequence<_Indexes...>) {
+    return func(std::integral_constant<std::size_t, _Indexes>{}...);
 }
 
-template <std::size_t Index, typename Func>
-constexpr auto index_apply(Func&& func) {
-    return index_apply_impl(std::forward<Func>(func), std::make_index_sequence<Index>{});
+template <std::size_t _Index, typename _Func>
+constexpr auto index_apply(_Func&& func) {
+    return index_apply_impl(std::forward<_Func>(func), std::make_index_sequence<_Index>{});
 }
 
-template <std::size_t Index, typename Tuple>
-constexpr auto take_front(Tuple&& tp) {
-    return index_apply<Index>(
-        [&](auto... Indexes) { return std::make_tuple(std::get<Indexes>(std::forward<Tuple>(tp))...); });
+template <std::size_t _Index, typename _Tuple>
+constexpr auto take_front(_Tuple&& tp) {
+    return index_apply<_Index>(
+        [&](auto... _Indexes) { return std::make_tuple(std::get<_Indexes>(std::forward<_Tuple>(tp))...); });
 }
 
-template <typename Tuple, typename Func>
-constexpr auto apply(Tuple&& tp, Func&& func) {
-    return index_apply<std::tuple_size<Tuple>{}>(
-        [&](auto... Indexes) { return func(std::get<Indexes>(std::forward<Tuple>(tp))...); });
+template <typename _Tuple, typename _Func>
+constexpr auto apply(_Tuple&& tp, _Func&& func) {
+    return index_apply<std::tuple_size<_Tuple>{}>(
+        [&](auto... _Indexes) { return func(std::get<_Indexes>(std::forward<_Tuple>(tp))...); });
 }
 
-template <typename Tuple>
-constexpr auto reverse(const Tuple& tp) {
-    return index_apply<std::tuple_size<Tuple>{}>(
-        [&](auto... Indexes) { return std::make_tuple(std::get<std::tuple_size<Tuple>{} - 1 - Indexes>(tp)...); });
+template <typename _Tuple>
+constexpr auto reverse(const _Tuple& tp) {
+    return index_apply<std::tuple_size<_Tuple>{}>(
+        [&](auto... _Indexes) { return std::make_tuple(std::get<std::tuple_size<_Tuple>{} - 1 - _Indexes>(tp)...); });
 }
 
-template <typename Tuple, std::size_t Index, typename T,
-          typename Indexes = std::make_index_sequence<std::tuple_size<Tuple>{}>>
+template <typename _Tuple, std::size_t _Index, typename _Ty,
+          typename _Indexes = std::make_index_sequence<std::tuple_size<_Tuple>{}>>
 struct replace_type_by_index;
 
-template <typename... Args, std::size_t Index, typename T, std::size_t... Indexes>
-struct replace_type_by_index<std::tuple<Args...>, Index, T, std::index_sequence<Indexes...>> {
-    using type = std::tuple<std::conditional_t<Indexes == Index, T, Args>...>;
+template <typename... _Args, std::size_t _Index, typename _Ty, std::size_t... _Indexes>
+struct replace_type_by_index<std::tuple<_Args...>, _Index, _Ty, std::index_sequence<_Indexes...>> {
+    using type = std::tuple<std::conditional_t<_Indexes == _Index, _Ty, _Args>...>;
 };
 
-template <std::size_t Index, typename Tuple, typename T>
-constexpr auto replace_tuple_arg_by_index(const Tuple& tp, T&& t) {
-    return std::tuple_cat(take_front<Index>(tp), std::make_tuple(std::forward<T>(t)),
-                          reverse(take_front<std::tuple_size<Tuple>{} - Index - 1>(reverse(tp))));
+template <std::size_t _Index, typename _Tuple, typename _Ty>
+constexpr auto replace_tuple_arg_by_index(const _Tuple& tp, _Ty&& t) {
+    return std::tuple_cat(take_front<_Index>(tp), std::make_tuple(std::forward<_Ty>(t)),
+                          reverse(take_front<std::tuple_size<_Tuple>{} - _Index - 1>(reverse(tp))));
 }
 
-template <std::size_t Index, typename T, typename... Args>
-constexpr auto replace_arg_by_index(T&& t, Args&&... args) {
-    auto args_tuple = std::make_tuple(std::forward<Args>(args)...);
-    return replace_tuple_arg_by_index<Index>(args_tuple, std::forward<T>(t));
+template <std::size_t _Index, typename _Ty, typename... _Args>
+constexpr auto replace_arg_by_index(_Ty&& t, _Args&&... args) {
+    auto args_tuple = std::make_tuple(std::forward<_Args>(args)...);
+    return replace_tuple_arg_by_index<_Index>(args_tuple, std::forward<_Ty>(t));
 }
 
-template <typename T, typename F>
-constexpr auto replace_arg_impl(T&& t, F&& f, std::true_type) {
-    return std::forward<F>(f);
+template <typename _Ty, typename _Func>
+constexpr auto replace_arg_impl(_Ty&& t, _Func&& f, std::true_type) {
+    return std::forward<_Func>(f);
 }
 
-template <typename T, typename F>
-constexpr auto replace_arg_impl(T&& t, F&& f, std::false_type) {
-    return std::forward<T>(t);
+template <typename _Ty, typename _Func>
+constexpr auto replace_arg_impl(_Ty&& t, _Func&& f, std::false_type) {
+    return std::forward<_Ty>(t);
 }
 
-template <bool B, typename T, typename F>
-constexpr auto replace_arg(T&& t, F&& f) {
-    return replace_arg_impl(std::forward<T>(t), std::forward<F>(f), std::integral_constant<bool, B>{});
+template <bool _True, typename _Ty, typename _Func>
+constexpr auto replace_arg(_Ty&& t, _Func&& f) {
+    return replace_arg_impl(std::forward<_Ty>(t), std::forward<_Func>(f), std::integral_constant<bool, _True>{});
 }
 
-template <typename T, typename F>
-constexpr auto replace_std_future(T&& t, F&& f) {
-    return replace_arg<is_std_future_placeholder<T>{}>(std::forward<T>(t), std::forward<F>(f));
+template <typename _Ty, typename _Func>
+constexpr auto replace_std_future(_Ty&& t, _Func&& f) {
+    return replace_arg<is_std_future_placeholder<_Ty>{}>(std::forward<_Ty>(t), std::forward<_Func>(f));
 }
 
-template <typename T, typename F>
-constexpr auto replace_awaitable(T&& t, F&& f) {
-    return replace_arg<is_awaitable_placeholder<T>{}>(std::forward<T>(t), std::forward<F>(f));
+template <typename _Ty, typename _Func>
+constexpr auto replace_awaitable(_Ty&& t, _Func&& f) {
+    return replace_arg<is_awaitable_placeholder<_Ty>{}>(std::forward<_Ty>(t), std::forward<_Func>(f));
 }
 
-template <typename Promise>
-void apply_callback(Promise promise) {
+template <typename _Promise>
+void apply_callback(_Promise promise) {
     promise->set_value();
 }
 
-template <typename Promise, typename Arg>
-void apply_callback(Promise promise, Arg&& arg) {
-    promise->set_value(std::forward<Arg>(arg));
+template <typename _Promise, typename _Arg>
+void apply_callback(_Promise promise, _Arg&& arg) {
+    promise->set_value(std::forward<_Arg>(arg));
 }
 
-template <typename Promise, typename... Args>
-void apply_callback(Promise promise, Args&&... args) {
-    promise->set_value(std::make_tuple(std::forward<Args>(args)...));
+template <typename _Promise, typename... _Args>
+void apply_callback(_Promise promise, _Args&&... args) {
+    promise->set_value(std::make_tuple(std::forward<_Args>(args)...));
 }
 
-template <typename Callback, template <typename> class Promise>
-class callback_wrapper final : public std::enable_shared_from_this<callback_wrapper<Callback, Promise>> {
+template <typename _Callback, template <typename> class _Promise>
+class callback_wrapper final : public std::enable_shared_from_this<callback_wrapper<_Callback, _Promise>> {
 public:
-    using promise_type = Promise<typename function_args<Callback>::args_tuple>;
+    using promise_type = _Promise<typename function_args<_Callback>::args_tuple>;
 
     callback_wrapper() noexcept : promise_{std::make_shared<promise_type>()} {
     }
@@ -508,7 +508,7 @@ public:
     }
 
     auto callback() {
-        typename function_args<Callback>::function_type callback{
+        typename function_args<_Callback>::function_type callback{
             [this, self = this->shared_from_this()](auto&&... args) {
                 apply_callback(promise_, std::forward<decltype(args)>(args)...);
             }};
@@ -519,44 +519,44 @@ private:
     std::shared_ptr<promise_type> promise_;
 };
 
-template <typename Func, typename... Args>
-auto async_wrapper_impl(std::true_type, Func&& func, Args&&... args) {
-    constexpr std::size_t index = std_future_index<std::tuple<std::decay_t<Args>...>>{};
-    using callback_t = typename function_args<std::decay_t<Func>>::template arg_t<index>;
+template <typename _Func, typename... _Args>
+auto async_wrapper_impl(std::true_type, _Func&& func, _Args&&... args) {
+    constexpr std::size_t index = std_future_index<std::tuple<std::decay_t<_Args>...>>{};
+    using callback_t = typename function_args<std::decay_t<_Func>>::template arg_t<index>;
     auto wrapper = std::make_shared<callback_wrapper<callback_t, std::promise>>();
     // 1.
-    // detail::apply(replace_arg_by_index<index>(wrapper->callback(), std::forward<Args>(args)...),
-    //               std::forward<Func>(func));
+    // detail::apply(replace_arg_by_index<index>(wrapper->callback(), std::forward<_Args>(args)...),
+    //               std::forward<_Func>(func));
 
     // 2.
-    // auto args_tupe = std::make_tuple(std::forward<Args>(args)...);
+    // auto args_tupe = std::make_tuple(std::forward<_Args>(args)...);
     // auto tp = replace_tuple_arg_by_index<index>(args_tupe, wrapper->callback());
-    // detail::apply(std::move(tp), std::forward<Func>(func));
+    // detail::apply(std::move(tp), std::forward<_Func>(func));
 
     // 3.
-    detail::apply(std::make_tuple(replace_std_future(std::forward<Args>(args), wrapper->callback())...),
-                  std::forward<Func>(func));
+    detail::apply(std::make_tuple(replace_std_future(std::forward<_Args>(args), wrapper->callback())...),
+                  std::forward<_Func>(func));
     return wrapper->get_future();
 }
 
 #if defined(ENABLE_CO_AWAIT)
-template <typename Func, typename... Args>
-auto async_wrapper_impl(std::false_type, Func&& func, Args&&... args) {
-    constexpr std::size_t index = awaitable_index<std::tuple<std::decay_t<Args>...>>{};
-    using callback_t = typename function_args<std::decay_t<Func>>::template arg_t<index>;
+template <typename _Func, typename... _Args>
+auto async_wrapper_impl(std::false_type, _Func&& func, _Args&&... args) {
+    constexpr std::size_t index = awaitable_index<std::tuple<std::decay_t<_Args>...>>{};
+    using callback_t = typename function_args<std::decay_t<_Func>>::template arg_t<index>;
     auto wrapper = std::make_shared<callback_wrapper<callback_t, awaitable_promise>>();
-    detail::apply(std::make_tuple(replace_awaitable(std::forward<Args>(args), wrapper->callback())...),
-                  std::forward<Func>(func));
+    detail::apply(std::make_tuple(replace_awaitable(std::forward<_Args>(args), wrapper->callback())...),
+                  std::forward<_Func>(func));
     return wrapper->get_future();
 }
 #endif // defined(ENABLE_CO_AWAIT)
 
 } // namespace detail
 
-template <typename Func, typename... Args, typename Tuple = std::tuple<std::decay_t<Args>...>>
-auto async_wrapper(Func&& func, Args&&... args) {
-    return detail::async_wrapper_impl(detail::has_std_future<Tuple>{}, std::forward<Func>(func),
-                                      std::forward<Args>(args)...);
+template <typename _Func, typename... _Args, typename _Tuple = std::tuple<std::decay_t<_Args>...>>
+auto async_wrapper(_Func&& func, _Args&&... args) {
+    return detail::async_wrapper_impl(detail::has_std_future<_Tuple>{}, std::forward<_Func>(func),
+                                      std::forward<_Args>(args)...);
 }
 
 } // namespace cue
